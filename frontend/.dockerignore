@@ -1,0 +1,28 @@
+# 依赖与构建产物
+node_modules/
+.next/
+out/
+build/
+
+# 环境变量
+.env
+.env.local
+.env*.local
+.env.local.example
+
+# 日志与缓存
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+
+# AI 代理提示（Next 16 自动生成）
+AGENTS.md
+CLAUDE.md
