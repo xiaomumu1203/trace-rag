@@ -21,7 +21,6 @@ target_metadata = Base.metadata
 
 
 def get_database_url() -> str:
-    """Use the same environment-based connection settings as the application."""
     return settings.get_mysql_url().render_as_string(hide_password=False)
 
 

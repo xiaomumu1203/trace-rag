@@ -1,4 +1,3 @@
-"""Alembic migration entry point used by the application lifespan."""
 
 from pathlib import Path
 
@@ -9,7 +8,7 @@ from app.core.config import settings
 
 
 def run_migrations() -> None:
-    """Upgrade to ``head``; Alembic makes this operation idempotent."""
+
     backend_dir = Path(__file__).resolve().parents[2]
     config = Config(str(backend_dir / "alembic.ini"))
     config.set_main_option(
