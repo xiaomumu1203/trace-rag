@@ -93,10 +93,6 @@ MINIO_SECRET_KEY=replace_with_a_minio_secret_key
 SECRET_KEY=replace_with_a_long_random_jwt_secret
 ```
 
-Docker Compose 会使用同一份 `.env` 同时配置 MySQL、MinIO 和后端，因此不要只修改后端配置而忽略这些变量。首次创建 Docker 数据卷后，MySQL 和 MinIO 不会自动替换已初始化的账号密码；如需变更已有环境的凭据，请按对应服务的迁移方式处理，或在开发环境执行 `docker compose down -v` 后重新初始化。
-
-不要把真实 API Key、数据库密码或 JWT 密钥提交到 Git。
-
 ### 2. 启动服务
 
 ```powershell
