@@ -3,7 +3,7 @@ import hashlib
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from pydantic import BaseModel
@@ -47,6 +47,7 @@ class TestRetrievalRequest(BaseModel):
     query: str
     kb_id: int
     top_k: int
+    strategy: Literal["dense", "bm25", "hybrid"] = "hybrid"
 
 
 @router.post("", response_model=KnowledgeBaseResponse)
@@ -590,7 +591,7 @@ async def test_retrieval(
             db=db,
             knowledge_base_ids=[request.kb_id],
             final_k=request.top_k,
-        ).invoke(request.query)
+        ).retrieve(request.query, strategy=request.strategy)
 
         response = []
         for doc in results:
@@ -602,7 +603,9 @@ async def test_retrieval(
                 "bm25_rank": doc.metadata.get("bm25_rank"),
             })
 
-        return {"results": response}
+        return {"strategy": request.strategy, "results": response}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="检索测试失败") from e
