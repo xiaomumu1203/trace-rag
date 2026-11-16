@@ -6,7 +6,6 @@ from app.api.external.api import  external_router
 from app.core.config import settings
 from fastapi import FastAPI
 from app.db.session import engine
-from app.db.migrations import run_migrations
 from app.core.minio_client import init_minio
 from app.services.chat_memory import chat_memory
 
@@ -21,8 +20,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     init_minio()
 
-    # 创建不存在的数据库表
-    run_migrations()
     yield
     await chat_memory.close()
     # 关闭数据库连接

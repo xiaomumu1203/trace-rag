@@ -45,8 +45,8 @@ async def process_document(
         kb_id: int, 
         file_name: str, 
         document_id: int,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        chunk_size: int = 500,
+        chunk_overlap: int = 100,
 ) -> None:
     """
     处理文档，将其拆分为块并存储在数据库中。
@@ -238,8 +238,8 @@ def process_document_background(
     kb_id: int,
     task_id: int,
     db: Optional[Session] = Depends(get_db),
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200
+    chunk_size: int = 500,
+    chunk_overlap: int = 100
 ) -> None:
     
     logger = logging.getLogger(__name__)

@@ -100,7 +100,13 @@ Set-Location 'F:\Trace RAG'
 docker compose up -d --build
 ```
 
-首次启动会创建基础服务；后端启动时会执行 Alembic 的 `upgrade head`，将数据库升级到已提交的最新迁移版本。
+首次启动会创建基础服务。启动后端前先单独执行一次 Alembic 迁移：
+
+```powershell
+docker compose run --rm --no-deps backend alembic -c alembic.ini upgrade head
+```
+
+这样数据库迁移与 API 进程分开：迁移失败不会让整个网站处于“前端能打开、后端不可用”的状态。
 
 打开 `http://localhost` 使用前端，或打开 `http://localhost/docs` 查看 FastAPI OpenAPI 文档。
 
@@ -122,23 +128,38 @@ docker compose down
 
 ## 测试
 
-测试优先覆盖不依赖外部服务的核心逻辑，例如中文分词、Dense Retrieval 去重和 RRF 融合排序。
+测试优先覆盖不依赖外部服务的核心逻辑，例如中文分词、Dense Retrieval 去重、三种策略选择、RRF 融合排序，以及外部 API Key 鉴权和知识库归属隔离。
 
 ```powershell
 uv run pytest
 ```
 
-后续计划补充 MySQL、MinIO、向量库参与的集成测试，以及端到端的“注册 → 上传 → 处理 → 检索 → 问答”测试链路。
+### 检索效果评测
+
+单元测试验证“代码没有退化”，而评测回答“检索结果好不好”。项目提供了一个离线评测脚本，用同一批人工标注的问题比较 `dense`、`bm25` 和默认的 `hybrid`（BM25 + Dense + RRF）。
+
+1. 复制 [retrieval_cases.example.jsonl](backend/evals/retrieval_cases.example.jsonl) 为 `backend/evals/retrieval_cases.jsonl`。
+2. 对每道题填写知识库 ID、真实问题，以及包含正确答案的一个或多个 `chunk_id`。`chunk_id` 可从登录后的“测试检索”结果的 `metadata.chunk_id` 获得。
+3. 在 Docker 网络中执行：
+
+```powershell
+docker compose build backend
+docker compose run --rm --no-deps backend python evals/run_retrieval_eval.py --cases evals/retrieval_cases.jsonl
+```
+
+输出中的 `Recall@1/3/5` 表示正确分块是否至少出现在前 1/3/5 条结果中；`MRR` 越接近 1，说明正确分块排得越靠前。建议先为一个知识库人工标注 20～30 个真实问题，再比较三种策略。
+
+登录后的 `POST /api/v1/knowledge-bases/test-retrieval` 也支持请求体字段 `strategy: "dense" | "bm25" | "hybrid"`，便于手动查看同一问题的差异；公开的 API Key 接口始终使用默认混合检索。
 
 ## 数据库迁移
 
-日常启动时应用会自动执行最新迁移。只有在修改 SQLAlchemy 模型后，才需要生成新的 migration：
+只有在修改 SQLAlchemy 模型后，才需要生成新的 migration：
 
 ```powershell
 docker compose run --rm --no-deps backend alembic -c alembic.ini revision --autogenerate -m "describe schema change"
 ```
 
-生成后应人工检查 `backend/alembic/versions/` 中的 `upgrade()` 和 `downgrade()`，然后重启 backend 让它自动执行升级。
+生成后应人工检查 `backend/alembic/versions/` 中的 `upgrade()` 和 `downgrade()`，再执行 `alembic upgrade head`。日常只改 Python 业务代码时，不需要运行迁移命令。
 
 ## 后续方向
 

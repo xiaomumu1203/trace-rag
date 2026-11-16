@@ -65,5 +65,7 @@ def query_knowledge_base(
             
         return {"results": response}
         
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="知识库检索失败") from e
