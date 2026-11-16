@@ -49,3 +49,34 @@ def test_rrf_prioritizes_a_chunk_found_by_both_retrievers() -> None:
     assert [item.metadata["chunk_id"] for item in results] == ["shared", "lexical-only", "dense-only"]
     assert results[0].metadata["dense_rank"] == 1
     assert results[0].metadata["bm25_rank"] == 2
+
+
+def test_retrieve_can_select_dense_or_bm25_without_running_rrf(monkeypatch) -> None:
+    retriever = HybridRetriever(vector_stores=[], db=None, knowledge_base_ids=[], final_k=1)
+    dense = [document("dense", "Dense")]
+    bm25 = [document("bm25", "BM25")]
+    monkeypatch.setattr(retriever, "_dense_search", lambda query: dense)
+    monkeypatch.setattr(retriever, "_bm25_search", lambda query: bm25)
+
+    dense_results = retriever.retrieve("query", strategy="dense")
+    bm25_results = retriever.retrieve("query", strategy="bm25")
+
+    assert [item.metadata["chunk_id"] for item in dense_results] == ["dense"]
+    assert dense_results[0].metadata["dense_rank"] == 1
+    assert "rrf_score" not in dense_results[0].metadata
+    assert [item.metadata["chunk_id"] for item in bm25_results] == ["bm25"]
+    assert bm25_results[0].metadata["bm25_rank"] == 1
+
+
+def test_bm25_strategy_skips_dense_search(monkeypatch) -> None:
+    retriever = HybridRetriever(vector_stores=[], db=None, knowledge_base_ids=[], final_k=1)
+
+    def fail(query: str) -> list[Document]:
+        raise AssertionError("dense search must not run for the bm25 strategy")
+
+    monkeypatch.setattr(retriever, "_bm25_search", lambda query: [document("bm25", "BM25")])
+    monkeypatch.setattr(retriever, "_dense_search", fail)
+
+    results = retriever.retrieve("query", strategy="bm25")
+
+    assert [item.metadata["chunk_id"] for item in results] == ["bm25"]

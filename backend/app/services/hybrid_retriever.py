@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from itertools import zip_longest
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 import jieba
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
@@ -15,6 +15,9 @@ from rank_bm25 import BM25Okapi
 from sqlalchemy.orm import Session
 
 from app.models.knowledge_base import DocumentChunk
+
+
+RetrievalStrategy = Literal["dense", "bm25", "hybrid"]
 
 
 def tokenize(text: str) -> list[str]:
@@ -41,9 +44,38 @@ class HybridRetriever(BaseRetriever):
     def _get_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> list[Document]:
-        dense_results = self._dense_search(query)
-        bm25_results = self._bm25_search(query)
-        return self._rrf_fuse(dense_results, bm25_results)
+        """Keep LangChain's standard ``invoke`` behaviour on hybrid retrieval."""
+        return self.retrieve(query, strategy="hybrid")
+
+    def retrieve(self, query: str, strategy: RetrievalStrategy = "hybrid") -> list[Document]:
+        """Run one named retrieval strategy for the protected test/evaluation paths.
+
+        ``invoke`` remains the normal application entry point and always uses
+        hybrid retrieval.  This method exists so an evaluation can compare the
+        three strategies against exactly the same questions and knowledge base.
+        """
+        if strategy == "dense":
+            return self._with_rank_metadata(self._dense_search(query), "dense")
+        if strategy == "bm25":
+            return self._with_rank_metadata(self._bm25_search(query), "bm25")
+        if strategy == "hybrid":
+            return self._rrf_fuse(self._dense_search(query), self._bm25_search(query))
+
+        raise ValueError(f"Unknown retrieval strategy: {strategy}")
+
+    def _with_rank_metadata(self, results: Iterable[Document], source: str) -> list[Document]:
+        """Limit one retriever's results and expose its rank to test consumers."""
+        ranked_documents: list[Document] = []
+        for rank, document in enumerate(results, start=1):
+            if rank > self.final_k:
+                break
+            ranked_documents.append(
+                Document(
+                    page_content=document.page_content,
+                    metadata={**document.metadata, f"{source}_rank": rank},
+                )
+            )
+        return ranked_documents
 
     def _dense_search(self, query: str) -> list[Document]:
         """Retrieve candidates from every selected knowledge base."""
