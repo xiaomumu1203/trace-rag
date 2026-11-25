@@ -21,12 +21,14 @@ import json
 import logging
 import os
 import sys
+from functools import lru_cache
 
 # 必须在导入 chromadb / transformers 之前设置，否则它们会往 stdout 写东西
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 from app.core.config import settings
 from app.db.session import SessionLocal
@@ -69,7 +71,9 @@ def _list_knowledge_bases(user_id: int) -> list[dict]:
         ]
 
 
+@lru_cache(maxsize=32)
 def _build_vector_store(kb_id: int):
+    """按知识库复用向量库客户端；embedding 模型由 EmbeddingFactory 的 lru_cache 复用。"""
     return VectorStoreFactory.create(
         store_type=settings.VECTOR_STORE_TYPE,
         collection_name=f"kb_{kb_id}",
@@ -85,7 +89,8 @@ def _search(query: str, kb_id: int, top_k: int, user_id: int) -> list[dict]:
             .first()
         )
         if kb is None:
-            return [{"error": f"知识库 {kb_id} 不存在，或不属于用户 {user_id}"}]
+            # 用 ToolError 而不是把错误塞进结果列表，客户端才能识别为 isError。
+            raise ToolError(f"知识库 {kb_id} 不存在，或不属于用户 {user_id}")
 
         retriever = HybridRetriever(
             vector_stores=[_build_vector_store(kb_id)],
@@ -132,9 +137,11 @@ def list_knowledge_bases(user_id: int = 1) -> list[dict]:
     """
     try:
         return _list_knowledge_bases(user_id)
-    except Exception as exc:  # noqa: BLE001 - 工具层不抛异常，返回可读错误
+    except ToolError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 统一转成客户端可识别的工具错误
         logger.exception("list_knowledge_bases 失败")
-        return [{"error": f"查询知识库失败: {exc}"}]
+        raise ToolError(f"查询知识库失败: {exc}") from exc
 
 
 @mcp.tool()
@@ -158,9 +165,11 @@ def search_knowledge_base(
     """
     try:
         return _search(query=query, kb_id=kb_id, top_k=top_k, user_id=user_id)
+    except ToolError:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("search_knowledge_base 失败")
-        return [{"error": f"检索失败: {exc}"}]
+        raise ToolError(f"检索失败: {exc}") from exc
 
 
 @mcp.tool()
@@ -174,7 +183,7 @@ def get_chunk_detail(chunk_id: str) -> dict:
         with SessionLocal() as db:
             row = db.query(DocumentChunk).filter(DocumentChunk.id == chunk_id).first()
             if row is None:
-                return {"error": f"chunk {chunk_id} 不存在"}
+                raise ToolError(f"chunk {chunk_id} 不存在")
             return {
                 "chunk_id": row.id,
                 "file_name": row.file_name,
@@ -182,9 +191,11 @@ def get_chunk_detail(chunk_id: str) -> dict:
                 "document_id": row.document_id,
                 "content": row.content,
             }
+    except ToolError:
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.exception("get_chunk_detail 失败")
-        return {"error": f"读取片段失败: {exc}"}
+        raise ToolError(f"读取片段失败: {exc}") from exc
 
 
 # --------------------------------------------------------------------------
