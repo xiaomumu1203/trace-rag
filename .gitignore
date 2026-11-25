@@ -14,3 +14,6 @@ wheels/
 
 .env
 .idea/
+
+# Runtime data (mount point for the backend container)
+uploads/

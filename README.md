@@ -151,6 +151,52 @@ docker compose run --rm --no-deps backend python evals/run_retrieval_eval.py --c
 
 登录后的 `POST /api/v1/knowledge-bases/test-retrieval` 也支持请求体字段 `strategy: "dense" | "bm25" | "hybrid"`，便于手动查看同一问题的差异；公开的 API Key 接口始终使用默认混合检索。
 
+## MCP Server
+
+知识库检索能力已封装为 [MCP](https://modelcontextprotocol.io)（Model Context Protocol）Server，可被 Claude Desktop、Cursor、Cline 等任意 MCP 客户端直接调用，不必经过 HTTP 层。
+
+```bash
+python mcp_server.py          # stdio 传输，由客户端负责拉起与关闭
+```
+
+提供的原语：
+
+| 类型 | 名称 | 说明 |
+|---|---|---|
+| tool | `list_knowledge_bases` | 列出指定用户的知识库 |
+| tool | `search_knowledge_base` | 向量 + BM25 + RRF 混合检索，返回带来源的片段 |
+| tool | `get_chunk_detail` | 按 `chunk_id` 展开片段原文，用于引用溯源 |
+| resource | `trace-rag://knowledge-bases/{user_id}` | 只读知识库列表 |
+
+依赖 `mcp>=1.2.0,<2`。冒烟测试（`kb_id`、`user_id` 按实际替换）：
+
+```powershell
+docker compose cp backend/mcp_server.py backend:/app/mcp_server.py
+docker compose cp backend/mcp_smoke_test.py backend:/app/mcp_smoke_test.py
+docker compose exec backend python mcp_smoke_test.py 6 2
+```
+
+两点需要注意：
+
+- **鉴权边界**：MCP Server 直连 MySQL 与向量库，绕过了 HTTP 层的 JWT / API Key。因此工具层按 `user_id` 校验知识库归属，越权查询返回“不存在或不属于该用户”，不会泄露数据。
+- **环境变量**：MCP 客户端拉起子进程时会清洗环境变量，`MYSQL_HOST`、`CHROMA_DB_HOST` 等不会被继承。以命令方式在客户端配置里启动时，需要在 `env` 字段显式传入；用 `docker compose exec` 启动则天然继承容器环境。
+
+Claude Desktop 配置示例（`-f` 换成自己 clone 下来的 `docker-compose.yml` 绝对路径，Windows 下需写全路径并保持 Docker Desktop 在运行）：
+
+```json
+{
+  "mcpServers": {
+    "trace-rag": {
+      "command": "docker",
+      "args": [
+        "compose", "-f", "/absolute/path/to/TraceRAG/docker-compose.yml",
+        "exec", "-T", "backend", "python", "/app/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
 ## 数据库迁移
 
 只有在修改 SQLAlchemy 模型后，才需要生成新的 migration：
@@ -163,7 +209,6 @@ docker compose run --rm --no-deps backend alembic -c alembic.ini revision --auto
 
 ## 后续方向
 
-- 建立 RAG 评测集，衡量检索命中率、引用正确性、延迟和成本
 - 将文档处理任务迁移至可重试的队列 worker
-- 提供 MCP Server，将知识库检索能力暴露为标准工具
-- 为 Agent 工具调用增加权限控制、超时和可观测执行轨迹
+- 为 MCP 工具调用增加超时、限流与调用审计
+- 引入重排序（rerank）与端到端生成质量评测（faithfulness / answer relevancy）

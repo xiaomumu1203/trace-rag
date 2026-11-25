@@ -19,6 +19,7 @@ dependencies = [
     "langchain-openai>=1.4.1",
     "langchain-qdrant>=1.1.0",
     "markdown>=3.6",
+    "mcp>=1.2.0,<2",
     "minio>=7.2.20",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
